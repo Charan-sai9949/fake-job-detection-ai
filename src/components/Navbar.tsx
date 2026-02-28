@@ -15,6 +15,7 @@ export default function Navbar({ isDark, toggleTheme }: NavbarProps) {
   const links = [
     { href: "/", label: "Home" },
     { href: "/check", label: "Check Offer" },
+    { href: "/compare", label: "Compare" },
     { href: "/how-it-works", label: "How It Works" },
   ];
 

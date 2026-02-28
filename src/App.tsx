@@ -10,6 +10,7 @@ import CheckOfferPage from "./pages/CheckOfferPage";
 import ResultPage from "./pages/ResultPage";
 import HowItWorksPage from "./pages/HowItWorksPage";
 import AdminPage from "./pages/AdminPage";
+import ComparePage from "./pages/ComparePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="/check" element={<CheckOfferPage />} />
             <Route path="/result" element={<ResultPage />} />
             <Route path="/how-it-works" element={<HowItWorksPage />} />
+            <Route path="/compare" element={<ComparePage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
