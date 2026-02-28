@@ -112,7 +112,7 @@ export default function ResultPage() {
             {[
               { label: "Company", value: state.form.companyName || "Not provided" },
               { label: "Email", value: state.form.email || "Not provided" },
-              { label: "Salary", value: state.form.salary ? `$${state.form.salary}` : "Not provided" },
+              { label: "Salary", value: state.form.salary ? `₹${state.form.salary}` : "Not provided" },
               { label: "Location", value: state.form.location || "Not provided" },
             ].map(({ label, value }) => (
               <div key={label} className="flex justify-between py-2 border-b border-border last:border-0">

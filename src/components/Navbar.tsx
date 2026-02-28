@@ -16,7 +16,6 @@ export default function Navbar({ isDark, toggleTheme }: NavbarProps) {
     { href: "/", label: "Home" },
     { href: "/check", label: "Check Offer" },
     { href: "/how-it-works", label: "How It Works" },
-    { href: "/admin", label: "Admin" },
   ];
 
   const isActive = (href: string) => location.pathname === href;
