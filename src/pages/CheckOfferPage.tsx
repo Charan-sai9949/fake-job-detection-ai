@@ -46,16 +46,19 @@ export default function CheckOfferPage() {
   return (
     <div className="min-h-screen pt-24 pb-16">
       <div className="container mx-auto px-4 max-w-2xl">
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 animate-slide-up" style={{ animationFillMode: "both" }}>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium mb-4 animate-border-glow">
+            ML-Powered Analysis Engine
+          </div>
           <h1 className="text-3xl md:text-4xl font-bold mb-3">
-            Analyze Your <span className="text-primary">Job Offer</span>
+            Analyze Your <span className="text-primary text-glow">Job Offer</span>
           </h1>
           <p className="text-muted-foreground">
-            Paste the job description below or fill in the details. Our AI will assess the risk in seconds.
+            Paste the job description below or fill in the details. Our ML ensemble model assesses the risk in seconds.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6 animate-slide-up delay-200" style={{ animationFillMode: "both" }}>
           <div
             onDrop={(e) => { e.preventDefault(); setDragOver(false); const file = e.dataTransfer.files[0]; if (file) handleFileUpload(file); }}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
