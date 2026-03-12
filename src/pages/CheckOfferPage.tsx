@@ -6,12 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { analyzeOffer, type FormData } from "@/lib/analysis";
+import { analyzeOfferWithAPI, type FormData } from "@/lib/analysis";
 
 export default function CheckOfferPage() {
   const [form, setForm] = useState<FormData>({
     jobDescription: "", companyName: "", email: "", salary: "", location: "",
   });
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const { toast } = useToast();
@@ -22,25 +24,67 @@ export default function CheckOfferPage() {
   };
 
   const handleFileUpload = (file: File) => {
-    if (file.type === "application/pdf" || file.type === "text/plain") {
-      toast({ title: "File uploaded", description: `${file.name} — text extracted for analysis.` });
-      setForm((prev) => ({ ...prev, jobDescription: prev.jobDescription + `\n[Uploaded file: ${file.name}]` }));
+    const validTypes = ["application/pdf", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+    const validExtensions = file.name.endsWith(".pdf") || file.name.endsWith(".txt") || file.name.endsWith(".doc") || file.name.endsWith(".docx");
+    
+    if (validTypes.includes(file.type) || validExtensions) {
+      toast({ title: "File uploaded", description: `${file.name} — ready for analysis.` });
+      setUploadedFile(file);
+      setUploadedFileName(file.name);
     } else {
-      toast({ title: "Invalid file", description: "Please upload a PDF or text file.", variant: "destructive" });
+      toast({ title: "Invalid file", description: "Please upload a PDF, Word document, or text file.", variant: "destructive" });
     }
+  };
+
+  const handleClearFile = () => {
+    setUploadedFile(null);
+    setUploadedFileName("");
+    toast({ title: "File cleared", description: "Ready to upload a new file or continue with manual entry." });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.jobDescription.trim() && !form.companyName.trim()) {
-      toast({ title: "Missing information", description: "Please provide at least a job description or company name.", variant: "destructive" });
+    if (!form.jobDescription.trim() && !form.companyName.trim() && !uploadedFile) {
+      toast({ title: "Missing information", description: "Please provide at least a job description, company name, or upload a file.", variant: "destructive" });
       return;
     }
     setIsAnalyzing(true);
-    await new Promise((r) => setTimeout(r, 2200));
-    const result = analyzeOffer(form);
-    setIsAnalyzing(false);
-    navigate("/result", { state: { ...result, form } });
+    try {
+      // Create FormData for backend - MUST use FormData, not JSON
+      const formData = new FormData();
+      
+      // Append file if present
+      if (uploadedFile) {
+        console.log("[DEBUG] Appending file to FormData:", uploadedFile.name, uploadedFile.type);
+        formData.append("pdf", uploadedFile);
+      }
+      
+      // Append form fields - always
+      formData.append("jobDescription", form.jobDescription);
+      formData.append("email", form.email);
+      formData.append("companyName", form.companyName);
+      formData.append("salary", form.salary);
+      formData.append("location", form.location);
+
+      console.log("[DEBUG] Sending FormData to backend:", {
+        hasFile: uploadedFile ? uploadedFile.name : "no file",
+        jobDescription: form.jobDescription.substring(0, 50) + "...",
+        email: form.email,
+        companyName: form.companyName,
+      });
+      
+      const result = await analyzeOfferWithAPI(formData);
+      setIsAnalyzing(false);
+      navigate("/result", { state: { ...result, form } });
+    } catch (error) {
+      setIsAnalyzing(false);
+      console.error("[ERROR] Analysis error:", error);
+      toast({ 
+        title: "Analysis failed", 
+        description: `Unable to analyze the offer. Error: ${error instanceof Error ? error.message : "Unknown error"}. Please check the backend server is running on port 5000.`, 
+        variant: "destructive" 
+      });
+    }
   };
 
   return (
@@ -66,12 +110,33 @@ export default function CheckOfferPage() {
             className={`glass rounded-xl p-8 text-center border-2 border-dashed transition-all cursor-pointer ${dragOver ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
             onClick={() => document.getElementById("file-input")?.click()}
           >
-            <input id="file-input" type="file" accept=".pdf,.txt" className="hidden"
+            <input id="file-input" type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
               onChange={(e) => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); }} />
             <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="font-medium">Drop PDF or click to upload</p>
-            <p className="text-sm text-muted-foreground mt-1">Supports .pdf and .txt files</p>
+            <p className="font-medium">Drop files or click to upload</p>
+            <p className="text-sm text-muted-foreground mt-1">Supports .pdf, .doc, .docx, and .txt files</p>
           </div>
+
+          {uploadedFileName && (
+            <div className="glass rounded-lg p-4 border border-success/30 bg-success/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <FileText className="w-5 h-5 text-success" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">📄 File uploaded</p>
+                  <p className="text-xs text-muted-foreground">{uploadedFileName}</p>
+                </div>
+              </div>
+              <Button 
+                type="button"
+                variant="ghost" 
+                size="sm"
+                onClick={handleClearFile}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                ✕
+              </Button>
+            </div>
+          )}
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
@@ -109,7 +174,7 @@ export default function CheckOfferPage() {
 
           <div className="flex items-start gap-2 text-sm text-muted-foreground glass rounded-lg p-3 border border-border">
             <AlertCircle className="w-4 h-4 mt-0.5 text-warning shrink-0" />
-            <p>Your data is analyzed locally and never stored. All processing is done privately.</p>
+            <p>Your data is analyzed by our ML model. Sensitive data is not stored permanently.</p>
           </div>
 
           <Button type="submit" size="lg" disabled={isAnalyzing}

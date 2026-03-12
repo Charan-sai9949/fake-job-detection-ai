@@ -125,6 +125,30 @@ export default function HowItWorksPage() {
           </div>
         </div>
 
+        {/* ML Score Explanation */}
+        <div className="glass rounded-xl p-8 border border-border mb-10">
+          <h2 className="text-xl font-semibold mb-6">Understanding Your ML Score</h2>
+          <p className="text-muted-foreground mb-6 text-sm leading-relaxed">
+            The ML score represents the probability predicted by the machine learning model that a job offer may be fraudulent. 
+            The model analyzes the job description and detects patterns commonly found in scam job postings.
+          </p>
+          <div className="space-y-4">
+            {[
+              { range: "0 – 40%", label: "Low Scam Probability", color: "bg-success", desc: "Very few scam patterns detected by the machine learning model." },
+              { range: "41 – 70%", label: "Moderate Scam Probability", color: "bg-warning", desc: "Some suspicious language patterns detected. Users should verify company details before applying." },
+              { range: "71 – 100%", label: "High Scam Probability", color: "bg-destructive", desc: "The machine learning model strongly detects scam-related patterns and fraudulent indicators." },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center gap-4">
+                <div className={`w-16 h-2 rounded-full ${item.color} shrink-0`} />
+                <div>
+                  <span className="font-semibold text-sm">{item.range} — {item.label}: </span>
+                  <span className="text-muted-foreground text-sm">{item.desc}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Techniques Deep Dive */}
         <div className="space-y-6">
           <h2 className="text-xl font-semibold">Detection Techniques</h2>

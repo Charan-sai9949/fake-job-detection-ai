@@ -134,16 +134,28 @@ function computeDomainScore(email: string, domainIntel: DomainIntelligence): num
   return Math.min(score, 100);
 }
 
-function computeSalaryScore(salary: string): number {
-  const val = parseFloat(salary.replace(/[^0-9.]/g, "")) || 0;
-  if (val === 0) return 0;
-  if (val > 500000) return 90;   // absurdly high
-  if (val > 200000) return 65;   // suspicious high
-  if (val < 3000 && val > 0) return 70;  // suspiciously low
-  if (val < 8000) return 30;
+function computeSalaryScore(salary: string, desc: string): number {
+  const lowerSalary = salary.toLowerCase();
+  let val = parseFloat(salary.replace(/[^0-9.]/g, "")) || 0;
+
+  // Convert LPA properly
+  if (lowerSalary.includes("lpa")) {
+    val = val * 100000;
+  }
+
+  const lowerDesc = desc.toLowerCase();
+
+  // Internship anomaly
+  if (lowerDesc.includes("intern") && val > 30000) return 75;
+
+  // High fresher salary anomaly
+  if (val > 1500000) return 85;
+  if (val > 800000) return 60;
+
+  if (val < 5000 && val > 0) return 70;
+
   return 0;
 }
-
 function computePatternScore(desc: string, companyName: string, email: string): number {
   let score = 0;
   if (!companyName.trim()) score += 30;
@@ -163,25 +175,104 @@ export function analyzeOffer(data: FormData): AnalysisResult {
   // ─── ML Sub-model scores ───
   const nlpScore = computeNLPScore(desc);
   const domainScore = computeDomainScore(data.email, domainIntel);
-  const salaryScore = computeSalaryScore(data.salary);
+  const salaryScore = computeSalaryScore(data.salary, desc);
   const patternScore = computePatternScore(desc, data.companyName, data.email);
+let extraRisk = 0;
 
-  // ─── Weighted Ensemble ───
-  // Weights tuned to simulate a logistic regression ensemble
-  const MODEL_WEIGHTS = [
-    { name: "NLP Keyword Model", weight: 0.38, score: nlpScore },
-    { name: "Domain Intelligence", weight: 0.28, score: domainScore },
-    { name: "Salary Anomaly", weight: 0.18, score: salaryScore },
-    { name: "Behavioral Pattern", weight: 0.16, score: patternScore },
+const adjustedSalary = parseFloat(data.salary.replace(/[^0-9.]/g, "")) || 0;
+
+// High salary boost
+if (adjustedSalary > 800000) {
+  extraRisk += 25;
+}
+
+// Immediate joining pressure
+if (desc.includes("immediate joining")) {
+  extraRisk += 20;
+}
+
+// Asking personal documents early
+if (
+  desc.includes("aadhaar") ||
+  desc.includes("pan") ||
+  desc.includes("documents")
+) {
+  extraRisk += 25;
+}
+
+// Remote + high salary combo
+if (desc.includes("remote") && adjustedSalary > 800000) {
+  extraRisk += 20;
+}
+
+// Unknown / non-trusted domain boost
+if (domainIntel.trustLevel !== "trusted") {
+  extraRisk += 10;
+}
+
+  // 🚨 CRITICAL OVERRIDE (prevents dilution of obvious scams)
+  const criticalKeywords = [
+    "security deposit",
+    "processing fee",
+    "registration fee",
+    "advance fee"
   ];
-  const ensembleScore = MODEL_WEIGHTS.reduce((acc, m) => acc + m.weight * m.score, 0);
 
-  // ─── Confidence: higher when multiple models agree ───
+  const hasCriticalPayment = criticalKeywords.some(k => desc.includes(k));
+  const isFreeEmail = FREE_EMAILS.some(d => emailDomain.includes(d));
+
+  if (hasCriticalPayment && isFreeEmail) {
+    return {
+      score: 92,
+      flags: [
+        "Critical scam pattern detected: payment request + free email domain"
+      ],
+      factors: [],
+      domainIntel,
+      suggestions: [
+        "Do NOT send any money",
+        "Block and report the sender immediately",
+        "This offer is highly likely to be fraudulent"
+      ],
+      mlBreakdown: {
+        nlpScore,
+        domainScore,
+        salaryScore,
+        patternScore,
+        ensembleScore: 92,
+        modelWeights: []
+      },
+      confidenceLevel: 96,
+    };
+  }
+
+  // 🔥 Stronger Ensemble Weights
+  const MODEL_WEIGHTS = [
+    { name: "NLP Keyword Model", weight: 0.45, score: nlpScore },
+    { name: "Domain Intelligence", weight: 0.30, score: domainScore },
+    { name: "Salary Anomaly", weight: 0.15, score: salaryScore },
+    { name: "Behavioral Pattern", weight: 0.10, score: patternScore },
+  ];
+
+  const ensembleScore = MODEL_WEIGHTS.reduce(
+    (acc, m) => acc + m.weight * m.score,
+    0
+  );
+console.log("NLP:", nlpScore);
+console.log("Domain:", domainScore);
+console.log("SalaryScore:", salaryScore);
+console.log("Pattern:", patternScore);
+console.log("Ensemble:", ensembleScore);
+console.log("ExtraRisk:", extraRisk);
+  const score = Math.round(
+  Math.min(Math.max(ensembleScore + extraRisk, 5), 98)
+);
+
+  // ─── Confidence Calculation ───
   const scores = [nlpScore, domainScore, salaryScore, patternScore];
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
   const variance = scores.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / scores.length;
   const stdDev = Math.sqrt(variance);
-  // Low std dev = models agree = high confidence; scale confidence 55–98
   const rawConf = Math.max(0, 100 - stdDev * 0.9);
   const confidenceLevel = Math.round(Math.min(98, Math.max(55, rawConf)));
 
@@ -191,38 +282,199 @@ export function analyzeOffer(data: FormData): AnalysisResult {
     salaryScore: Math.round(salaryScore),
     patternScore: Math.round(patternScore),
     ensembleScore: Math.round(ensembleScore),
-    modelWeights: MODEL_WEIGHTS.map(m => ({ ...m, score: Math.round(m.score) })),
+    modelWeights: MODEL_WEIGHTS.map(m => ({
+      name: m.name,
+      weight: m.weight,
+      score: Math.round(m.score)
+    })),
   };
 
-  // ─── Risk Factors (for breakdown UI) ───
-  const triggeredKeywords = SCAM_PAIRS.filter(({ keyword }) => desc.includes(keyword));
+  // ─── Flags ───
+  const flags: string[] = [];
+
+  if (isFreeEmail)
+    flags.push("Recruiter using a free personal email domain");
+
+  SCAM_PAIRS.forEach(({ keyword, flag }) => {
+    if (desc.includes(keyword)) flags.push(flag);
+  });
+
+  if (salaryScore > 0)
+    flags.push("Salary anomaly detected");
+
+  if (!data.companyName.trim())
+    flags.push("No company name provided — anonymous offers are suspicious");
+
+  if (SUSPICIOUS_TLDS.some((d) => emailDomain.includes(d)))
+    flags.push("Email from a disposable or suspicious domain");
+
+  if (domainIntel.estimatedAgeDays < 180)
+    flags.push(
+      `Recruiter domain is very new (~${Math.floor(domainIntel.estimatedAgeDays / 30)} months old)`
+    );
+
+  // ─── Suggestions ───
+  const suggestions: string[] = [];
+
+  if (score >= 70) {
+    suggestions.push("Do NOT share personal documents or banking details");
+    suggestions.push("Verify company registration on MCA portal");
+    suggestions.push("Never pay any registration or processing fee");
+    suggestions.push("Report this offer to your placement cell or cybercrime portal");
+  } else if (score >= 35) {
+    suggestions.push("Proceed carefully — verify company independently");
+    suggestions.push("Check company on LinkedIn and Glassdoor");
+    suggestions.push("Request official offer letter on company letterhead");
+  } else {
+    suggestions.push("Offer appears clean — proceed with standard precautions");
+    suggestions.push("Always review contract terms carefully");
+  }
+
+  return {
+    score,
+    flags,
+    factors: [],
+    domainIntel,
+    suggestions,
+    mlBreakdown,
+    confidenceLevel
+  };
+}
+
+// ─── API Integration ──────────────────────────────────────────────────────────
+
+interface APIResponse {
+  risk_score: number;
+  status: string;
+  ml_confidence: number;
+  reasons: string[];
+  success: boolean;
+}
+
+export async function analyzeOfferWithAPI(data: FormData | any): Promise<AnalysisResult> {
+  const API_URL = "http://localhost:5000/api/analyze";
+
+  try {
+    // Always send as FormData to the backend
+    let formData: FormData;
+
+    if (data instanceof FormData) {
+      // Already FormData from CheckOfferPage or similar - use as-is
+      formData = data;
+    } else {
+      // Convert plain object to FormData (for fallback/compatibility)
+      formData = new FormData();
+      // Only append fields that exist in the data object
+      if (data.jobDescription) formData.append("jobDescription", data.jobDescription);
+      if (data.email) formData.append("email", data.email);
+      if (data.companyName) formData.append("companyName", data.companyName);
+      if (data.salary) formData.append("salary", data.salary);
+      if (data.location) formData.append("location", data.location);
+      if (data.pdf) formData.append("pdf", data.pdf); // Only append if file exists
+    }
+
+    console.log("[DEBUG] Sending request to backend:", API_URL);
+
+    // Send as FormData - DO NOT set Content-Type header
+    // Browser will automatically set correct Content-Type: multipart/form-data with boundary
+    const response = await fetch(API_URL, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend error: ${response.status} ${response.statusText}`);
+    }
+
+    const apiResult: APIResponse = await response.json();
+
+    if (!apiResult.success) {
+      throw new Error(apiResult.reasons?.join(", ") || "API analysis failed");
+    }
+
+    console.log("[DEBUG] API analysis completed:", apiResult.score);
+
+    // Extract form data for UI processing
+    const email = (formData.get("email") as string || "").toLowerCase();
+    const jobDescription = (formData.get("jobDescription") as string || "");
+    const companyName = (formData.get("companyName") as string || "").toLowerCase();
+    const salary = (formData.get("salary") as string || "");
+
+    return buildAnalysisResult(apiResult, email, jobDescription, companyName, salary);
+  } catch (error) {
+    console.error("[ERROR] API Analysis failed:", error);
+    throw error;
+  }
+}
+
+function buildAnalysisResult(
+  apiResult: APIResponse,
+  email: string,
+  jobDescription: string,
+  companyName: string,
+  salary: string
+): AnalysisResult {
+  // Transform API response to match AnalysisResult interface
+  const emailDomain = email.split("@")[1]?.toLowerCase() || "";
+  const domainIntel = analyzeDomain(email);
+  const salaryValue = parseFloat(salary.replace(/[^0-9.]/g, "")) || 0;
+
+  // Calculate approximate ML and rule scores from the weighted result
+  // risk_score = 0.7 * ml_score + 0.3 * rule_score
+  // ml_confidence is the ML probability (0-100), so use that as ml_score
+  const mlScore = apiResult.ml_confidence;
+  const estimatedRuleScore = apiResult.risk_score > mlScore ? Math.min(100, (apiResult.risk_score - mlScore * 0.7) / 0.3) : 0;
+
+  // Generate UI-specific data
+  const mlBreakdown: MLBreakdown = {
+    nlpScore: Math.round(mlScore * 0.7),
+    domainScore: Math.round(estimatedRuleScore * 0.3),
+    salaryScore: salaryValue > 200000 ? 65 : salaryValue < 5000 && salaryValue > 0 ? 70 : 0,
+    patternScore: Math.round(apiResult.reasons.length > 0 ? 40 : 0),
+    ensembleScore: apiResult.risk_score,
+    modelWeights: [
+      { name: "ML Model", weight: 0.7, score: Math.round(mlScore) },
+      { name: "Rule Indicators", weight: 0.3, score: Math.round(estimatedRuleScore) },
+    ],
+  };
+
+  // Risk factors
   const factors: RiskFactor[] = [
     {
       label: "Email Domain",
       weight: 25,
       triggered: FREE_EMAILS.some((d) => emailDomain.includes(d)) || SUSPICIOUS_TLDS.some((d) => emailDomain.includes(d)),
-      detail: FREE_EMAILS.some((d) => emailDomain.includes(d)) ? "Free personal email domain" : SUSPICIOUS_TLDS.some((d) => emailDomain.includes(d)) ? "Suspicious TLD domain" : "Professional domain",
-      confidence: domainScore > 50 ? 92 : 75,
+      detail: FREE_EMAILS.some((d) => emailDomain.includes(d))
+        ? "Free personal email domain"
+        : SUSPICIOUS_TLDS.some((d) => emailDomain.includes(d))
+        ? "Suspicious TLD domain"
+        : "Professional domain",
+      confidence: apiResult.risk_score > 50 ? 92 : 75,
     },
     {
       label: "Salary Realism",
       weight: 20,
-      triggered: salary > 200000 || (salary < 5000 && salary > 0),
-      detail: salary > 200000 ? "Unrealistically high salary" : salary < 5000 && salary > 0 ? "Suspiciously low salary" : "Salary within normal range",
-      confidence: salaryScore > 0 ? 88 : 70,
+      triggered: salaryValue > 200000 || (salaryValue < 5000 && salaryValue > 0),
+      detail:
+        salaryValue > 200000
+          ? "Unrealistically high salary"
+          : salaryValue < 5000 && salaryValue > 0
+          ? "Suspiciously low salary"
+          : "Salary within normal range",
+      confidence: salaryValue > 200000 || (salaryValue < 5000 && salaryValue > 0) ? 88 : 70,
     },
     {
       label: "NLP Scam Keywords",
       weight: 35,
-      triggered: triggeredKeywords.length > 0,
-      detail: `${triggeredKeywords.length} scam keyword(s) found`,
-      confidence: nlpScore > 30 ? 95 : 72,
+      triggered: apiResult.reasons.length > 0,
+      detail: `${apiResult.reasons.length} risk factor(s) detected by ML`,
+      confidence: apiResult.ml_confidence > 70 ? 95 : 72,
     },
     {
       label: "Company Identity",
       weight: 15,
-      triggered: !data.companyName.trim(),
-      detail: data.companyName.trim() ? "Company name provided" : "No company name — anonymous offer",
+      triggered: !companyName.trim(),
+      detail: companyName.trim() ? "Company name provided" : "No company name — anonymous offer",
       confidence: 85,
     },
     {
@@ -234,26 +486,16 @@ export function analyzeOffer(data: FormData): AnalysisResult {
     },
   ];
 
-  const score = Math.round(Math.min(Math.max(ensembleScore, 5), 98));
-
-  // ─── Flags ───
-  const flags: string[] = [];
-  if (FREE_EMAILS.some((d) => emailDomain.includes(d))) flags.push("Recruiter using a free personal email domain");
-  SCAM_PAIRS.forEach(({ keyword, flag }) => { if (desc.includes(keyword)) flags.push(flag); });
-  if (salary > 200000) flags.push("Unusually high salary offer — possible lure tactic");
-  if (!data.companyName.trim()) flags.push("No company name provided — anonymous offers are suspicious");
-  if (SUSPICIOUS_TLDS.some((d) => emailDomain.includes(d))) flags.push("Email from a disposable/suspicious domain");
-  if (domainIntel.estimatedAgeDays < 180) flags.push(`Recruiter domain is very new (~${Math.floor(domainIntel.estimatedAgeDays / 30)} months old)`);
-
-  // ─── Smart Suggestions ───
+  // Generate suggestions based on new scoring thresholds
+  // New thresholds: Safe <31, Suspicious 31-60, High Risk >=61
   const suggestions: string[] = [];
-  if (score >= 65) {
+  if (apiResult.risk_score >= 61) {
     suggestions.push("Do NOT share personal documents or banking details");
     suggestions.push("Report this offer to your college placement cell");
     suggestions.push("Verify company registration on MCA21 portal");
     suggestions.push("Do not pay any registration or processing fee");
     suggestions.push("Block and report the sender if contacted via WhatsApp");
-  } else if (score >= 30) {
+  } else if (apiResult.risk_score >= 31) {
     suggestions.push("Proceed carefully — verify company details independently");
     suggestions.push("Check company on LinkedIn and Glassdoor before responding");
     suggestions.push("Request an official offer letter on company letterhead");
@@ -264,5 +506,16 @@ export function analyzeOffer(data: FormData): AnalysisResult {
     suggestions.push("Confirm salary and role details in writing");
   }
 
-  return { score, flags, factors, domainIntel, suggestions, mlBreakdown, confidenceLevel };
+  // Calculate confidence level
+  const confidenceLevel = Math.round(apiResult.ml_confidence);
+
+  return {
+    score: apiResult.risk_score,
+    flags: apiResult.reasons,
+    factors,
+    domainIntel,
+    suggestions,
+    mlBreakdown,
+    confidenceLevel,
+  };
 }
