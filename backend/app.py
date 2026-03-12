@@ -393,7 +393,7 @@ if __name__ == "__main__":
     app.run(
         debug=True, 
         host="0.0.0.0", 
-        port=5000,
+        port=10000,
         use_reloader=False,  # Disable reloader to avoid socket issues on Windows
         threaded=True        # Allow multiple concurrent requests
     )
