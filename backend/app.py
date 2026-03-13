@@ -9,6 +9,8 @@ import re
 import pytesseract
 from pdf2image import convert_from_bytes
 import io
+import os
+
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -390,10 +392,10 @@ if __name__ == "__main__":
     # Run Flask with Windows-compatible socket settings
     # use_reloader=False prevents double initialization on Windows
     # threaded=True allows concurrent requests
-    app.run(
-        debug=True, 
-        host="0.0.0.0", 
-        port=10000,
-        use_reloader=False,  # Disable reloader to avoid socket issues on Windows
-        threaded=True        # Allow multiple concurrent requests
-    )
+
+port = int(os.environ.get("PORT", 10000))
+
+app.run(
+    host="0.0.0.0",
+    port=port
+)
