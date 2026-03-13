@@ -352,8 +352,7 @@ interface APIResponse {
 }
 
 export async function analyzeOfferWithAPI(data: FormData | any): Promise<AnalysisResult> {
-  const API_URL = "http://localhost:5000/api/analyze";
-
+const API_URL = `${import.meta.env.VITE_API_URL}/api/analyze`;
   try {
     // Always send as FormData to the backend
     let formData: FormData;
